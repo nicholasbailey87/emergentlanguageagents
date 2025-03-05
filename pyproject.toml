@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "emergentlanguageagents"
+version = "0.1.0"
+description = "A repository of code for emergent language agents"
+authors = ["Nicholas Bailey <nicholasbailey87@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+torch = "^2.6.0"
+
+
+[[tool.poetry.source]]
+name = "pytorch-nightly"
+url = "https://download.pytorch.org/whXl/nightly/cu128"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
