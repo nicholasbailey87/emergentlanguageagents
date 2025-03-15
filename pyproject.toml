@@ -4,17 +4,24 @@ version = "0.1.0"
 description = "A repository of code for emergent language agents"
 authors = ["Nicholas Bailey <nicholasbailey87@gmail.com>"]
 readme = "README.md"
+include = [
+    { path = "assets/*", format = ["sdist", "wheel"] } # include static files
+]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-torch = "^2.6.0"
-
+torch = {version = "^2.6.0+cu126", source = "pytorch-gpu"}
+torchvision = {version = "^0.21.0+cu126", source = "pytorch-gpu"}
+torchaudio = {version = "^2.6.0+cu126", source = "pytorch-gpu"}
 
 [[tool.poetry.source]]
-name = "pytorch-nightly"
-url = "https://download.pytorch.org/whXl/nightly/cu128"
+name = "pytorch-gpu"
+url = "https://download.pytorch.org/whl/cu126"
 priority = "explicit"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.setuptools.package-data]
+"emergentlanguageagents.assets" = ["*.pkl"]
