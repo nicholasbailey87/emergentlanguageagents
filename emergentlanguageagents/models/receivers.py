@@ -5,15 +5,20 @@ Listener models
 
 import torch
 import torch.nn as nn
-from . import rnn
 
+from . import rnn
+from . import cnn
+
+class Recpeiver(nn.Module):
+    # TODO: implement this as the base class for receivers. Maybe use ABCs!
+    pass
 
 class CopyListener(nn.Module):
-    def __init__(self, feat_model, message_size=100, dropout=0.2):
+    def __init__(self, feat_model, message_size=100, dropout=0.2, **kwargs):
         super().__init__()
 
-        self.feat_model = feat_model
-        self.feat_size = feat_model.final_feat_dim
+        self.feat_model = getattr(cnn, kwargs['cnn'])
+        self.feat_size = self.feat_model.final_feat_dim
         self.dropout = nn.Dropout(p=dropout)
         self.message_size = message_size
 
@@ -57,14 +62,21 @@ class CopyListener(nn.Module):
         self.feat_model.reset_parameters()
         self.bilinear.reset_parameters()
 
+# TODO: make a generic receiver class and then make the below the EmComGen-specific receiver "EmComGenReceiver"
 
 class Listener(CopyListener):
-    def __init__(self, feat_model, embedding_module, **kwargs):
+    def __init__(self, feat_model, **kwargs):
         super().__init__(feat_model, **kwargs)
+        self.vocab_size = kwargs['vocabulary']
+        self.message_length = kwargs['message_length']
+        self.embedding_size = kwargs['embedding_size']
+        self.hidden_size = kwargs['hidden_size']
 
-        self.embedding = embedding_module
-        self.lang_model = rnn.RNNEncoder(self.embedding, hidden_size=self.message_size)
-        self.vocab_size = embedding_module.num_embeddings
+        self.embedding = nn.Embedding(
+            self.vocabulary + 3, # (account for SOS, EOS, UNK)
+            self.embedding_size
+        )
+        self.lang_model = rnn.RNNEncoder(self.embedding, hidden_size=self.hidden_size)
 
     def forward(self, feats, lang, lang_length):
         # Embed features

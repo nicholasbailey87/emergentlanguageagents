@@ -65,7 +65,7 @@ class Conv4(nn.Module):
                 layer.reset_parameters()
 
 
-class ResNet18(nn.Module):
+class PretrainedResNet18(nn.Module):
 
     def __init__(self):
         super().__init__()
