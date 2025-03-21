@@ -41,19 +41,20 @@ class Conv4(nn.Module):
     """
     4-layer convolutional image encoder, returning a flattened output.
     """
-    def __init__(self, d_model = 64):
+    def __init__(self, image_size=64):
         super(Conv4, self).__init__()
+        self.image_size = image_size
         trunk = []
         for i in range(4):
-            indim = 3 if i == 0 else d_model
-            outdim = d_model
+            indim = 3 if i == 0 else 64
+            outdim = 64
             trunk.append(ConvBlock(indim, outdim))
 
         trunk.append(Flatten())
 
         self.trunk = nn.Sequential(*trunk)
 
-        self.final_feat_dim = 1024 # TODO: make image size more flexible. final_feat_dim here is H * W * channels of final layer where channels = 64 and h/w are original divided by 16 because we do 4 max pool operations with kernel 2
+        self.final_feat_dim = (self.image_size / 16) ** 2 * 64
 
     def forward(self, x):
         out = self.trunk(x)
@@ -69,7 +70,8 @@ class PretrainedResNet18(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.final_feat_dim = 512 # FIXME: It's a bit gross to have to define final_feat_dim
+        self.image_size = 224 # This is a constant for ResNet-18
+        self.final_feat_dim = 512 # This is a constant for ResNet-18
         self.resnet18 = resnet18()
         # Cool new way to import static files from a package:
         asset_folder = resources.files(assets)

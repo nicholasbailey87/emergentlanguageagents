@@ -7,17 +7,50 @@ import torch
 import torch.nn as nn
 
 from . import rnn
-from . import cnn
+from . import image_encoders
 
-class Recpeiver(nn.Module):
-    # TODO: implement this as the base class for receivers. Maybe use ABCs!
-    pass
+# What does a receiver need?
+
+# It needs d_model
+# It needs some kind of image embedding process that takes multiple images in a vector of size (N, images_per_sample, H, W, channels)
+# It needs some kind of message embedding process
+# It needs a way to generate a judgement/action for each image
+class Receiver(nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+        # TODO: implement this as the base class for receivers. Maybe use ABCs!
+        self.d_model = kwargs['d_model']
+        self.vision_model = getattr(image_encoders, kwargs['image_encoder'])
+        self.image_embedding_size = self.vision_model.final_feat_dim
+        self.language_model = 
+        self.projection = nn.Linear(kwargs['d_model'], self.image_embedding_size, bias=False)
+        self.dropout = nn.Dropout(p=dropout)
+
+    def embed_images(self, batch):
+        """
+        Take a batch of image sets as a tensor, with size
+            (batch_size, images_per_sample, H, W, channels) and return a
+            tensor of sets of image embeddings with size
+            (batch_size, images_per_sample, self.image_embedding_size)
+        """
+        batch_size = batch.shape[0]
+        images_per_sample = batch.shape[1]
+        rest = batch.shape[2:]
+        feats_flat = batch.view(batch_size * images_per_sample, *rest)
+        feats_emb_flat = self.feat_model(feats_flat)
+
+        feats_emb = feats_emb_flat.unsqueeze(1).view(batch_size, n_obj, -1)
+        feats_emb = self.dropout(feats_emb)
+
+        return feats_emb
+
+
 
 class CopyListener(nn.Module):
     def __init__(self, feat_model, message_size=100, dropout=0.2, **kwargs):
         super().__init__()
 
-        self.feat_model = getattr(cnn, kwargs['cnn'])
+        self.feat_model = getattr(image_encoders, kwargs['cnn'])
         self.feat_size = self.feat_model.final_feat_dim
         self.dropout = nn.Dropout(p=dropout)
         self.message_size = message_size

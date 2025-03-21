@@ -12,7 +12,7 @@ from torch.distributions import Gumbel
 import data
 import data.language
 
-from . import image_encoders
+# TODO: make senders initialise submodules based on config strings as in senders.py
 
 class CopySpeaker(nn.Module):
     def __init__(
@@ -21,11 +21,11 @@ class CopySpeaker(nn.Module):
         dropout=0.5,
         prototype="average",
         n_transformer_heads=8,
-        n_transformer_layers=2, **kwargs
+        n_transformer_layers=2,
     ):
         super().__init__()
-        self.feat_model = getattr(image_encoders, kwargs['cnn'])
-        self.feat_size = self.feat_model.final_feat_dim
+        self.feat_model = feat_model
+        self.feat_size = feat_model.final_feat_dim
         self.emb_size = 2 * self.feat_size
         self.dropout = nn.Dropout(p=dropout)
 
@@ -137,25 +137,20 @@ class CopySpeaker(nn.Module):
         """
         return self.embed_features(feats, targets)
 
-# TODO: make a generic sender class and then make the below the EmComGen-specific sender "EmComGenSender"
 
 class Speaker(CopySpeaker):
     def __init__(
         self, feat_model, embedding_module, tau=1.0, hidden_size=100, **kwargs
     ):
         super().__init__(feat_model, **kwargs)
-        self.vocab_size = kwargs['vocabulary']
-        self.message_length = kwargs['message_length']
-        self.embedding_size = kwargs['embedding_size']
-        self.hidden_size = kwargs['hidden_size']
-        self.tau = kwargs['temperature']
 
-        self.embedding = nn.Embedding(
-            self.vocabulary + 3, # (account for SOS, EOS, UNK)
-            self.embedding_size
-        )
+        self.embedding_dim = embedding_module.embedding_dim
+        self.embedding = embedding_module
+        self.vocab_size = embedding_module.num_embeddings
+        self.hidden_size = hidden_size
+        self.tau = tau
 
-        self.gru = nn.GRU(self.embedding_size, self.hidden_size)
+        self.gru = nn.GRU(self.embedding_dim, self.hidden_size)
         self.outputs2vocab = nn.Linear(self.hidden_size, self.vocab_size)
         # 2 * feat_size - one for positive prototype, one for negative
         self.init_h = nn.Linear(2 * self.feat_size, self.hidden_size)
