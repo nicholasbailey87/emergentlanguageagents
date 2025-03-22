@@ -2,49 +2,27 @@
 Speaker models
 """
 
-
 import torch
 import torch.nn as nn
 import numpy as np
 from torch.nn import functional as F
 from torch.distributions import Gumbel
 
-import data
-import data.language
-
 from . import image_encoders
+# import data
+# import data.language
 
-class CopySpeaker(nn.Module):
-    def __init__(
-        self,
-        feat_model,
-        dropout=0.5,
-        prototype="average",
-        n_transformer_heads=8,
-        n_transformer_layers=2, **kwargs
-    ):
+class ECGCopySpeaker(nn.Module):
+    def __init__(self, **kwargs):
         super().__init__()
-        self.feat_model = getattr(image_encoders, kwargs['cnn'])
+        
+        assert "feat_model" in kwargs
+        assert "dropout" in kwargs
+
+        self.feat_model = getattr(image_encoders, kwargs["feat_model"])
         self.feat_size = self.feat_model.final_feat_dim
         self.emb_size = 2 * self.feat_size
-        self.dropout = nn.Dropout(p=dropout)
-
-        self.prototype = prototype
-        if self.prototype == "transformer":
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=self.feat_size,
-                nhead=n_transformer_heads,
-                dim_feedforward=self.feat_size,
-            )
-            self.transformer = nn.TransformerEncoder(
-                encoder_layer,
-                num_layers=n_transformer_layers,
-                norm=nn.LayerNorm(self.feat_size),
-            )
-
-            cls_emb = torch.empty(self.feat_size)
-            cls_emb.uniform_(-0.1, 0.1)
-            self.cls_emb = nn.Parameter(cls_emb)
+        self.dropout = nn.Dropout(p=kwargs["dropout"])
 
     def embed_features(self, feats, targets=None):
         """
@@ -68,48 +46,21 @@ class CopySpeaker(nn.Module):
 
             return prototypes_dropout
 
-    def form_prototypes(self, feats_emb, targets):
-        if self.prototype == "average":
-            return self._form_average_prototypes(feats_emb, targets)
-        elif self.prototype == "transformer":
-            return self._form_transformer_prototypes(feats_emb, targets)
-        else:
-            raise RuntimeError(f"Unknown prototype {self.prototype}")
-
     def add_cls_token(self, feats):
         cls_embs = self.cls_emb.unsqueeze(0).unsqueeze(1).expand(feats.shape[0], -1, -1)
         return torch.cat([cls_embs, feats], 1)
 
-    def _form_transformer_prototypes(self, feats_emb, targets):
-        # Targets/rev_targets just happen to be transformer masks?
-        # Here we depend that the first inputs are always positive targets, and
-        # last inputs are always negative
-        midp = targets.shape[1] // 2
-        if not ((targets[:, :midp] == 1.0).all() and (targets[:, midp:] == 0.0).all()):
-            raise NotImplementedError("Implement generic masking")
-
-        pos_emb = self.add_cls_token(feats_emb[:, :midp])
-        neg_emb = self.add_cls_token(feats_emb[:, midp:])
-
-        # Transpose
-        pos_emb = pos_emb.transpose(0, 1)
-        neg_emb = neg_emb.transpose(0, 1)
-
-        pos_output = self.transformer(pos_emb)
-        neg_output = self.transformer(neg_emb)
-
-        pos_output = pos_output.transpose(0, 1)
-        neg_output = neg_output.transpose(0, 1)
-
-        pos_proto = pos_output[:, 0]
-        neg_proto = neg_output[:, 0]
-
-        return torch.cat([pos_proto, neg_proto], -1)
-
-    def _form_average_prototypes(self, feats_emb, targets):
+    def form_prototypes(self, feats_emb, targets):
         """
         Given embedded features and targets, form into prototypes (i.e. average
-        together positive examples, average together negative examples)
+            together positive examples, average together negative examples).
+
+        Note that the original code from
+            https://github.com/jayelm/emergent-generalization
+            allows for two kinds of prototype, but I have deleted all the code
+            related to the transformer prototypes as we will always choose
+            "average" prototypes in practice when we try to reproduce
+            https://arxiv.org/abs/2106.02668
         """
         rev_targets = 1 - targets
         pos_proto = (feats_emb * targets.unsqueeze(2)).sum(1)
@@ -137,25 +88,26 @@ class CopySpeaker(nn.Module):
         """
         return self.embed_features(feats, targets)
 
-# TODO: make a generic sender class and then make the below the EmComGen-specific sender "EmComGenSender"
 
-class Speaker(CopySpeaker):
-    def __init__(
-        self, feat_model, embedding_module, tau=1.0, hidden_size=100, **kwargs
-    ):
-        super().__init__(feat_model, **kwargs)
-        self.vocab_size = kwargs['vocabulary']
-        self.message_length = kwargs['message_length']
-        self.embedding_size = kwargs['embedding_size']
-        self.hidden_size = kwargs['hidden_size']
-        self.tau = kwargs['temperature']
+class ECGSpeaker(ECGCopySpeaker):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        self.sos_index = kwargs["sos_index"] # 1 in emcomgen experiments
+        self.eos_index = kwargs["eos_index"] # 2 in emcomgen experiments
 
-        self.embedding = nn.Embedding(
-            self.vocabulary + 3, # (account for SOS, EOS, UNK)
-            self.embedding_size
-        )
+        assert "vocab_size" in kwargs
+        assert "embedding_size" in kwargs
+        assert "embedding_size" in kwargs
 
-        self.gru = nn.GRU(self.embedding_size, self.hidden_size)
+        self.embedding = nn.Embedding(kwargs["vocab_size"] + 3, kwargs["embedding_size"])
+
+        self.embedding_dim = self.embedding.embedding_dim
+        self.vocab_size = self.embedding.num_embeddings
+        self.hidden_size = kwargs["hidden_size"]
+        self.tau = kwargs["temperature"]
+
+        self.gru = nn.GRU(self.embedding_dim, self.hidden_size)
         self.outputs2vocab = nn.Linear(self.hidden_size, self.vocab_size)
         # 2 * feat_size - one for positive prototype, one for negative
         self.init_h = nn.Linear(2 * self.feat_size, self.hidden_size)
@@ -181,7 +133,7 @@ class Speaker(CopySpeaker):
         # first input is SOS token
         # (batch_size, n_vocab)
         inputs_onehot = torch.zeros(batch_size, self.vocab_size).to(states.device)
-        inputs_onehot[:, data.language.SOS_IDX] = 1.0
+        inputs_onehot[:, self.sos_index] = 1.0
 
         # (batch_size, len, n_vocab)
         inputs_onehot = inputs_onehot.unsqueeze(1)
@@ -252,7 +204,7 @@ class Speaker(CopySpeaker):
             for i, pred in enumerate(predicted_npy):
                 if not done_sampling[i]:
                     lang_length[i] += 1
-                if pred == data.language.EOS_IDX:
+                if pred == self.eos_index:
                     done_sampling[i] = True
 
             # (1, batch_size, n_vocab) X (n_vocab, h) -> (1, batch_size, h)
@@ -260,7 +212,7 @@ class Speaker(CopySpeaker):
 
         # Add EOS if we've never sampled it
         eos_onehot = torch.zeros(batch_size, 1, self.vocab_size).to(states.device)
-        eos_onehot[:, 0, data.language.EOS_IDX] = 1.0
+        eos_onehot[:, 0, self.eos_index] = 1.0
         lang.append(eos_onehot)
         # Cut off the rest of the sentences
         for i, _ in enumerate(predicted_npy):
@@ -295,15 +247,17 @@ class Speaker(CopySpeaker):
         test_feats_emb = self.embed_features(test_feats)
         scores = torch.bmm(test_feats_emb, states.unsqueeze(2)).squeeze(2)
         return scores
-
-    def to_text(self, lang_onehot):
-        texts = []
-        lang = lang_onehot.argmax(2)
-        for sample in lang.cpu().numpy():
-            text = []
-            for item in sample:
-                text.append(data.ITOS[item])
-                if item == data.EOS_IDX:
-                    break
-            texts.append(" ".join(text))
-        return np.array(texts, dtype=np.unicode_)
+    
+    # This is never used in practice, so we're commenting it out to remove
+    # a coupling to the `data` module and can reimplement it later if needed
+    # def to_text(self, lang_onehot):
+    #     texts = []
+    #     lang = lang_onehot.argmax(2)
+    #     for sample in lang.cpu().numpy():
+    #         text = []
+    #         for item in sample:
+    #             text.append(data.ITOS[item])
+    #             if item == data.EOS_IDX:
+    #                 break
+    #         texts.append(" ".join(text))
+    #     return np.array(texts, dtype=np.unicode_)
