@@ -16,10 +16,10 @@ class ECGCopySpeaker(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
         
-        assert "feat_model" in kwargs
+        assert "image_encoder" in kwargs
         assert "dropout" in kwargs
 
-        self.feat_model = getattr(image_encoders, kwargs["feat_model"])
+        self.feat_model = getattr(image_encoders, kwargs["image_encoder"])()
         self.feat_size = self.feat_model.final_feat_dim
         self.emb_size = 2 * self.feat_size
         self.dropout = nn.Dropout(p=kwargs["dropout"])
@@ -93,18 +93,25 @@ class ECGSpeaker(ECGCopySpeaker):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        self.sos_index = kwargs["sos_index"] # 1 in emcomgen experiments
-        self.eos_index = kwargs["eos_index"] # 2 in emcomgen experiments
+        # These are just some globals from 
+        # https://github.com/jayelm/emergent-generalization/
+        #     blob/master/code/data/language.py
+        self.pad_index = 0
+        self.sos_index = 1
+        self.eos_index = 2
+        self.unk_index = 3
 
-        assert "vocab_size" in kwargs
-        assert "embedding_size" in kwargs
-        assert "embedding_size" in kwargs
+        needed = ["vocabulary", "embedding_size", "d_model", "temperature"]
+        assert all([key in kwargs for key in needed])
 
-        self.embedding = nn.Embedding(kwargs["vocab_size"] + 3, kwargs["embedding_size"])
+        self.embedding = nn.Embedding(
+            kwargs["vocabulary"] + 3, # (account for SOS, EOS, UNK)
+            kwargs["embedding_size"]
+        )
 
         self.embedding_dim = self.embedding.embedding_dim
         self.vocab_size = self.embedding.num_embeddings
-        self.hidden_size = kwargs["hidden_size"]
+        self.hidden_size = kwargs["d_model"]
         self.tau = kwargs["temperature"]
 
         self.gru = nn.GRU(self.embedding_dim, self.hidden_size)

@@ -11,14 +11,14 @@ class ECGCopyListener(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
         
-        assert "feat_model" in kwargs
-        assert "message_size" in kwargs
+        assert "image_encoder" in kwargs
+        assert "d_model" in kwargs
         assert "dropout" in kwargs
 
-        self.feat_model = getattr(image_encoders, kwargs["feat_model"])
+        self.feat_model = getattr(image_encoders, kwargs["image_encoder"])()
         self.feat_size = self.feat_model.final_feat_dim
         self.dropout = nn.Dropout(p=kwargs["dropout"])
-        self.message_size = kwargs["message_size"]
+        self.message_size = kwargs["d_model"]
 
         if self.message_size is None:
             self.bilinear = nn.Linear(self.feat_size, 1, bias=False)
@@ -70,10 +70,10 @@ class ECGListener(ECGCopyListener):
         
         super().__init__(**kwargs)
 
-        assert "vocab_size" in kwargs
+        assert "vocabulary" in kwargs
         assert "embedding_size" in kwargs
 
-        self.embedding = nn.Embedding(kwargs["vocab_size"] + 3, kwargs["embedding_size"])
+        self.embedding = nn.Embedding(kwargs["vocabulary"] + 3, kwargs["embedding_size"])
         self.lang_model = rnn.RNNEncoder(self.embedding, hidden_size=self.message_size)
         self.vocab_size = self.embedding.num_embeddings
 

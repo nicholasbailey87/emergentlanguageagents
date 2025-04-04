@@ -11,14 +11,14 @@ from emergentlanguageagents import assets
 class ConvBlock(nn.Module):
 
     def __init__(self, indim, outdim, pool=True, padding=1):
-        super(ConvBlock, self).__init__()
+        super().__init__()
         self.indim = indim
         self.outdim = outdim
         self.C = nn.Conv2d(indim, outdim, 3, padding=padding)
         self.BN = nn.BatchNorm2d(outdim)
         self.relu = nn.ReLU(inplace=True)
         self.pool = nn.MaxPool2d(2)
-        self.trunk = nn.Sequential([self.C, self.BN, self.relu, self.pool])
+        self.trunk = nn.Sequential(self.C, self.BN, self.relu, self.pool)
 
         self.reset_parameters()
 
@@ -32,7 +32,7 @@ class ConvBlock(nn.Module):
 
 class Flatten(nn.Module):
     def __init__(self):
-        super(Flatten, self).__init__()
+        super().__init__()
 
     def forward(self, x):
         return x.view(x.size(0), -1)
@@ -42,8 +42,11 @@ class Conv4(nn.Module):
     4-layer convolutional image encoder, returning a flattened output.
     """
     def __init__(self, image_size=64):
-        super(Conv4, self).__init__()
+        super().__init__()
+        
         self.image_size = image_size
+        assert self.image_size % 16 == 0
+
         trunk = []
         for i in range(4):
             indim = 3 if i == 0 else 64
@@ -54,7 +57,7 @@ class Conv4(nn.Module):
 
         self.trunk = nn.Sequential(*trunk)
 
-        self.final_feat_dim = (self.image_size / 16) ** 2 * 64
+        self.final_feat_dim = int((self.image_size / 16) ** 2 * 64)
 
     def forward(self, x):
         out = self.trunk(x)
@@ -86,10 +89,7 @@ class PretrainedResNet18(nn.Module):
             param.requires_grad = False
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
-            x = self.transforms(x)
-            y_pred = self.resnet18(x)
-            return y_pred.argmax(dim=1)
+        return self.resnet18(x)
 
     def reset_parameters(self):
         # Never reset parameters
